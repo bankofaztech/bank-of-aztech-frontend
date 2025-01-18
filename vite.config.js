@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/',
+  base: '/bankofaztech.github.io/',
   plugins: [
     react(),
     VitePWA({
@@ -35,5 +35,19 @@ export default defineConfig({
   define: {
     'process.env': {},
     global: {}
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'web3-vendor': ['ethers', '@wagmi/core', '@rainbow-me/rainbowkit'],
+          'ui-vendor': ['@chakra-ui/react', '@emotion/react', '@emotion/styled']
+        }
+      }
+    }
   }
 }) 

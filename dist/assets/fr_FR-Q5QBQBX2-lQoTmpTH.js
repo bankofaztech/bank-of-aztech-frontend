@@ -1347,3 +1347,4 @@ var e=`{
   }
 }
 `;export{e as default};
+//# sourceMappingURL=fr_FR-Q5QBQBX2-lQoTmpTH.js.map
