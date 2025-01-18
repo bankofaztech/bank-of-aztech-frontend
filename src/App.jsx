@@ -37,6 +37,7 @@ import {
   ModalFooter,
   Divider
 } from '@chakra-ui/react'
+import { ExternalLinkIcon } from '@chakra-ui/icons'
 import { FaTelegram, FaChartLine, FaInfoCircle, FaCheckCircle, FaExchangeAlt, FaTwitter, FaExternalLinkAlt, FaCoins, FaGithub } from 'react-icons/fa'
 import { GiOwl } from 'react-icons/gi'
 import stakingAbi from './contracts/stakingAbi.json'
@@ -98,6 +99,8 @@ function App() {
   const [isStaking, setIsStaking] = useState(false)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
   const [isCollecting, setIsCollecting] = useState(false)
+  const [lastTransactionHash, setLastTransactionHash] = useState(null);
+  const [isApproveLoading, setIsApproveLoading] = useState(false);
 
   // Custom theme colors
   const bgColor = useColorModeValue('gray.800', 'gray.900')
@@ -437,6 +440,66 @@ function App() {
     }
   }
 
+  const handleApprove = async () => {
+    try {
+      if (!isConnected) {
+        toast({
+          title: 'Hata',
+          description: 'Lütfen önce cüzdanınızı bağlayın.',
+          status: 'error',
+          duration: 5000,
+        });
+        return;
+      }
+
+      setIsApproveLoading(true);
+      
+      const approveConfig = {
+        address: TOKEN_CONTRACT_ADDRESS,
+        abi: tokenAbi,
+        functionName: 'approve',
+        args: [STAKING_CONTRACT_ADDRESS, ethers.constants.MaxUint256],
+      };
+      
+      const approveResult = await approveWrite(approveConfig);
+      
+      if (approveResult?.hash) {
+        toast({
+          title: 'İşlem Başlatıldı',
+          description: 'Token onayı bekleniyor...',
+          status: 'info',
+          duration: 5000,
+          position: 'top-right',
+          isClosable: true,
+        });
+
+        const approveReceipt = await waitForTransaction({ hash: approveResult.hash });
+        
+        if (approveReceipt.status === 'success') {
+          toast({
+            title: 'İşlem Başarılı!',
+            description: 'Token onayı verildi',
+            status: 'success',
+            duration: 5000,
+            position: 'top-right',
+            isClosable: true,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Approve error:', error);
+      toast({
+        title: 'Hata',
+        description: error.message || 'Token onayı başarısız oldu.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsApproveLoading(false);
+    }
+  };
+
   const handleStake = async () => {
     try {
       if (!isConnected) {
@@ -445,8 +508,8 @@ function App() {
           description: 'Lütfen önce cüzdanınızı bağlayın.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
       if (!stakeAmount) {
@@ -455,102 +518,60 @@ function App() {
           description: 'Lütfen stake miktarını girin.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
-      setIsStaking(true)
+      setIsStaking(true);
       
-      try {
-        // Önce allowance kontrolü
-        const stakeAmountWei = parseEther(stakeAmount.toString())
-        if (!allowance || allowance < stakeAmountWei) {
-          // Approve gerekiyor
-          const approveConfig = {
-            address: TOKEN_CONTRACT_ADDRESS,
-            abi: tokenAbi,
-            functionName: 'approve',
-            args: [STAKING_CONTRACT_ADDRESS, stakeAmountWei],
-          }
-          
-          const approveResult = await approveWrite(approveConfig)
-          
-          toast({
-            title: 'Onay işlemi gönderildi',
-            description: 'Token onayı bekleniyor...',
-            status: 'info',
-            duration: 5000,
-            isClosable: true,
-          })
-
-          if (approveResult?.hash) {
-            const approveReceipt = await waitForTransaction({ hash: approveResult.hash })
-            
-            if (approveReceipt.status === 'success') {
-              toast({
-                title: 'Onay başarılı',
-                description: 'Stake işlemi başlatılıyor...',
-                status: 'success',
-                duration: 5000,
-                isClosable: true,
-              })
-            }
-          }
-        }
-
-        // Stake işlemi
-        const config = {
-          address: STAKING_CONTRACT_ADDRESS,
-          abi: stakingAbi,
-          functionName: 'stake',
-          args: [parseEther(stakeAmount.toString())],
-        }
-        
-        const result = await stakeWrite(config)
-        
+      const config = {
+        address: STAKING_CONTRACT_ADDRESS,
+        abi: stakingAbi,
+        functionName: 'stake',
+        args: [parseEther(stakeAmount.toString())],
+      };
+      
+      const result = await stakeWrite(config);
+      
+      if (result?.hash) {
         toast({
-          title: 'İşlem gönderildi',
-          description: 'Stake işlemi başlatıldı, lütfen bekleyin...',
+          title: 'İşlem Başlatıldı',
+          description: 'Stake işlemi bekleniyor...',
           status: 'info',
           duration: 5000,
+          position: 'top-right',
           isClosable: true,
-        })
+        });
 
-        if (result?.hash) {
-          const receipt = await waitForTransaction({ hash: result.hash })
-          
-          if (receipt.status === 'success') {
-            toast({
-              title: 'Başarılı',
-              description: 'Stake işlemi başarıyla tamamlandı.',
-              status: 'success',
-              duration: 5000,
-              isClosable: true,
-            })
-            
-            // Bakiyeleri güncelle
-            updateBalances()
-          }
+        const receipt = await waitForTransaction({ hash: result.hash });
+        
+        if (receipt.status === 'success') {
+          toast({
+            title: 'İşlem Başarılı!',
+            description: `${stakeAmount} BOFA stake edildi`,
+            status: 'success',
+            duration: 5000,
+            position: 'top-right',
+            isClosable: true,
+          });
+          updateBalances();
         }
-      } catch (error) {
-        throw error
       }
     } catch (error) {
-      // Sadece gerçek hataları göster
       if (error.message !== "Cannot read properties of undefined (reading 'hash')") {
-        console.error('Stake error:', error)
+        console.error('Stake error:', error);
         toast({
           title: 'Hata',
           description: error.message || 'Stake işlemi başarısız oldu.',
           status: 'error',
           duration: 5000,
           isClosable: true,
-        })
+        });
       }
     } finally {
-      setIsStaking(false)
+      setIsStaking(false);
     }
-  }
+  };
 
   const handleWithdraw = async () => {
     try {
@@ -560,8 +581,8 @@ function App() {
           description: 'Lütfen önce cüzdanınızı bağlayın.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
       if (!withdrawAmount) {
@@ -570,65 +591,58 @@ function App() {
           description: 'Lütfen withdraw miktarını girin.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
-      setIsWithdrawing(true)
+      setIsWithdrawing(true);
       
-      try {
-        const config = {
-          address: STAKING_CONTRACT_ADDRESS,
-          abi: stakingAbi,
-          functionName: 'withdraw',
-          args: [parseEther(withdrawAmount.toString())],
-        }
-        
-        const result = await withdrawWrite(config)
-        
+      const config = {
+        address: STAKING_CONTRACT_ADDRESS,
+        abi: stakingAbi,
+        functionName: 'withdraw',
+        args: [parseEther(withdrawAmount.toString())],
+      };
+      
+      const result = await withdrawWrite(config);
+      
+      if (result?.hash) {
         toast({
-          title: 'İşlem gönderildi',
-          description: 'Withdraw işlemi başlatıldı, lütfen bekleyin...',
+          title: 'İşlem Başlatıldı',
+          description: 'Withdraw işlemi bekleniyor...',
           status: 'info',
           duration: 5000,
+          position: 'top-right',
           isClosable: true,
-        })
+        });
 
-        if (result?.hash) {
-          const receipt = await waitForTransaction({ hash: result.hash })
-          
-          if (receipt.status === 'success') {
-            toast({
-              title: 'Başarılı',
-              description: 'Withdraw işlemi başarıyla tamamlandı.',
-              status: 'success',
-              duration: 5000,
-              isClosable: true,
-            })
-            
-            // Bakiyeleri güncelle
-            updateBalances()
-          }
+        const receipt = await waitForTransaction({ hash: result.hash });
+        
+        if (receipt.status === 'success') {
+          toast({
+            title: 'İşlem Başarılı!',
+            description: `${withdrawAmount} BOFA çekildi`,
+            status: 'success',
+            duration: 5000,
+            position: 'top-right',
+            isClosable: true,
+          });
+          updateBalances();
         }
-      } catch (error) {
-        throw error
       }
     } catch (error) {
-      // Sadece gerçek hataları göster
-      if (error.message !== "Cannot read properties of undefined (reading 'hash')") {
-        console.error('Withdraw error:', error)
-        toast({
-          title: 'Hata',
-          description: error.message || 'Withdraw işlemi başarısız oldu.',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        })
-      }
+      console.error('Withdraw error:', error);
+      toast({
+        title: 'Hata',
+        description: error.message || 'Withdraw işlemi başarısız oldu.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     } finally {
-      setIsWithdrawing(false)
+      setIsWithdrawing(false);
     }
-  }
+  };
 
   const handleCollectRewards = async () => {
     try {
@@ -638,8 +652,8 @@ function App() {
           description: 'Lütfen önce cüzdanınızı bağlayın.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
       if (parseFloat(earnedRewards) <= 0) {
@@ -648,64 +662,57 @@ function App() {
           description: 'Toplanacak ödül yok.',
           status: 'error',
           duration: 5000,
-        })
-        return
+        });
+        return;
       }
 
-      setIsCollecting(true)
+      setIsCollecting(true);
       
-      try {
-        const config = {
-          address: STAKING_CONTRACT_ADDRESS,
-          abi: stakingAbi,
-          functionName: 'getReward',
-        }
-        
-        const result = await collectWrite(config)
-        
+      const config = {
+        address: STAKING_CONTRACT_ADDRESS,
+        abi: stakingAbi,
+        functionName: 'getReward',
+      };
+      
+      const result = await collectWrite(config);
+      
+      if (result?.hash) {
         toast({
-          title: 'İşlem gönderildi',
-          description: 'Ödül toplama işlemi başlatıldı, lütfen bekleyin...',
+          title: 'İşlem Başlatıldı',
+          description: 'Ödül toplama işlemi bekleniyor...',
           status: 'info',
           duration: 5000,
+          position: 'top-right',
           isClosable: true,
-        })
+        });
 
-        if (result?.hash) {
-          const receipt = await waitForTransaction({ hash: result.hash })
-          
-          if (receipt.status === 'success') {
-            toast({
-              title: 'Başarılı',
-              description: 'Ödül toplama işlemi başarıyla tamamlandı.',
-              status: 'success',
-              duration: 5000,
-              isClosable: true,
-            })
-            
-            // Bakiyeleri güncelle
-            updateBalances()
-          }
+        const receipt = await waitForTransaction({ hash: result.hash });
+        
+        if (receipt.status === 'success') {
+          toast({
+            title: 'İşlem Başarılı!',
+            description: 'Ödüller başarıyla toplandı',
+            status: 'success',
+            duration: 5000,
+            position: 'top-right',
+            isClosable: true,
+          });
+          updateBalances();
         }
-      } catch (error) {
-        throw error
       }
     } catch (error) {
-      // Sadece gerçek hataları göster
-      if (error.message !== "Cannot read properties of undefined (reading 'hash')") {
-        console.error('Collect error:', error)
-        toast({
-          title: 'Hata',
-          description: error.message || 'Ödül toplama işlemi başarısız oldu.',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        })
-      }
+      console.error('Collect error:', error);
+      toast({
+        title: 'Hata',
+        description: error.message || 'Ödül toplama işlemi başarısız oldu.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     } finally {
-      setIsCollecting(false)
+      setIsCollecting(false);
     }
-  }
+  };
 
   useEffect(() => {
     if (account) {
@@ -1707,7 +1714,23 @@ function App() {
               </VStack>
 
               {/* Buttons */}
-              <SimpleGrid columns={{ base: 1, sm: 3 }} spacing={4} w="full">
+              <SimpleGrid columns={{ base: 1, sm: 4 }} spacing={4} w="full">
+                <Button
+                  colorScheme="blue"
+                  onClick={handleApprove}
+                  size="lg"
+                  isLoading={isApproveLoading}
+                  loadingText="Approving..."
+                  isDisabled={!isConnected}
+                  _hover={{
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 0 15px rgba(66, 153, 225, 0.6)'
+                  }}
+                  transition="all 0.2s"
+                >
+                  Stake Approve
+                </Button>
+
                 <Button
                   colorScheme="green"
                   onClick={handleStake}
@@ -1756,6 +1779,26 @@ function App() {
                   Collect
                 </Button>
               </SimpleGrid>
+
+              {/* Transaction Info Box */}
+              {lastTransactionHash && (
+                <Box mt={4} p={4} borderRadius="md" borderWidth={1} borderColor="purple.500" bg="whiteAlpha.200">
+                  <VStack spacing={2} align="start">
+                    <Text color="purple.400" fontSize="md" fontWeight="bold">Son İşlem Detayı:</Text>
+                    <Link href={`https://snowtrace.io/tx/${lastTransactionHash}`} isExternal color="purple.500" fontSize="md">
+                      <HStack>
+                        <Text>Transaction Hash: {lastTransactionHash.slice(0, 10)}...{lastTransactionHash.slice(-8)}</Text>
+                        <ExternalLinkIcon mx="2px" />
+                      </HStack>
+                    </Link>
+                    <Link href={`https://snowtrace.io/tx/${lastTransactionHash}`} isExternal>
+                      <Button size="sm" colorScheme="purple" variant="outline" rightIcon={<ExternalLinkIcon />}>
+                        Snowtrace'de Görüntüle
+                      </Button>
+                    </Link>
+                  </VStack>
+                </Box>
+              )}
             </VStack>
           </Box>
 
@@ -1804,6 +1847,17 @@ function App() {
               </Link>
             </VStack>
           </Box>
+
+          {lastTransactionHash && (
+            <Box mt={4} p={4} borderRadius="md" borderWidth={1} borderColor="purple.500">
+              <VStack spacing={2} align="start">
+                <Text color="purple.400">Son İşlem:</Text>
+                <Link href={`https://snowtrace.io/tx/${lastTransactionHash}`} isExternal color="purple.500">
+                  {lastTransactionHash.slice(0, 10)}...{lastTransactionHash.slice(-8)} <ExternalLinkIcon mx="2px" />
+                </Link>
+              </VStack>
+            </Box>
+          )}
         </VStack>
 
         {/* Investment Modal */}
